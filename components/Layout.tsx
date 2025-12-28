@@ -39,7 +39,10 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => {
-            const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
+            // Fix: Fallback to empty string if pathname is null
+            const currentPath = pathname || '';
+            const isActive = currentPath === item.to || currentPath.startsWith(`${item.to}/`);
+            
             return (
               <Link
                 key={item.to}
