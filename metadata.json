@@ -1,0 +1,5 @@
+{
+  "name": "LegalFlow - Practice Management",
+  "description": "A comprehensive Legal Practice Management System featuring client management, case tracking, and secure authentication. Note: Backend logic (MongoDB/NextAuth) is simulated client-side for immediate preview.",
+  "requestFramePermissions": []
+}
