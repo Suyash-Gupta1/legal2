@@ -10,21 +10,27 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 export default function CaseDocuments() {
+  // Fix: Safely extract ID using the hook
   const params = useParams();
+  const caseId = params?.id as string;
+
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'INVOICE' | 'UPLOAD'>('ALL');
 
   useEffect(() => {
-    if (params.id) {
+    // Fix: Check if caseId exists before fetching
+    if (caseId) {
         fetchCaseDetails();
     }
-  }, [params.id]);
+  }, [caseId]);
 
   const fetchCaseDetails = async () => {
+    if (!caseId) return;
+    
     try {
-      const data = await DataService.getCase(params.id as string);
+      const data = await DataService.getCase(caseId);
       setCaseData(data);
     } catch (error) {
       console.error(error);
