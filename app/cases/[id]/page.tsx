@@ -1,33 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DataService } from '@/services/data';
 import { Case, CaseDocument } from '@/types';
 import { Card } from '@/components/Card';
-import { Calendar, Clock, ArrowLeft, MessageSquare, Send, Upload, FileText, Mail, CheckCircle, Download, File, ExternalLink } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Trash2, File, UploadCloud, Search, Filter, AlertCircle, ExternalLink } from 'lucide-react';
 import AppLayout from '@/components/Layout';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
-export default function CaseDetails() {
+export default function CaseDocuments() {
   const params = useParams();
+  // Safe access to ID
+  const caseId = params?.id as string;
+  
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [loading, setLoading] = useState(true);
-  const [noteContent, setNoteContent] = useState('');
-  const [submittingNote, setSubmittingNote] = useState(false);
-  const [fileUploading, setFileUploading] = useState(false);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<'ALL' | 'INVOICE' | 'UPLOAD'>('ALL');
 
   useEffect(() => {
-    if (params.id) {
+    // Check if caseId exists before fetching
+    if (caseId) {
         fetchCaseDetails();
     }
-  }, [params.id]);
+  }, [caseId]);
 
   const fetchCaseDetails = async () => {
     try {
-      const data = await DataService.getCase(params.id as string);
+      if (!caseId) return;
+      const data = await DataService.getCase(caseId);
       setCaseData(data);
     } catch (error) {
       console.error(error);
@@ -36,90 +38,11 @@ export default function CaseDetails() {
     }
   };
 
-  const handleAddNote = async (e?: React.FormEvent, content?: string) => {
-    if (e) e.preventDefault();
-    const textToAdd = content || noteContent;
-    
-    if (!textToAdd.trim() || !caseData) return;
-
-    setSubmittingNote(true);
-    try {
-      const newNote = await DataService.addCaseNote(caseData.id, textToAdd);
-      setCaseData(prev => prev ? ({
-        ...prev,
-        notes: [newNote, ...(prev.notes || [])]
-      }) : null);
-      if (!content) setNoteContent('');
-    } catch (error) {
-      console.error("Failed to add note");
-    } finally {
-      setSubmittingNote(false);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files[0] && caseData) {
-          const file = e.target.files[0];
-          setFileUploading(true);
-          
-          try {
-              const formData = new FormData();
-              formData.append('file', file);
-              
-              // Upload actual file to Cloudinary via API
-              const newDoc = await DataService.uploadCaseDocument(caseData.id, formData);
-
-              setCaseData(prev => prev ? ({
-                  ...prev,
-                  documents: [newDoc, ...(prev.documents || [])]
-              }) : null);
-              
-              await handleAddNote(undefined, `📁 Document Uploaded: ${file.name} (${newDoc.size})`);
-              
-              alert("Document uploaded successfully!");
-          } catch (error) {
-              console.error(error);
-              alert("Failed to upload document.");
-          } finally {
-              setFileUploading(false);
-              if (fileInputRef.current) fileInputRef.current.value = '';
-          }
-      }
-  };
-
-  const handleGenerateInvoice = async () => {
-      if (!caseData) return;
-      const confirm = window.confirm(`Generate invoice for current value $${caseData.value}?`);
-      if (confirm) {
-          const invoiceNum = `INV-${Math.floor(Math.random() * 10000)}`;
-          
-          try {
-              const newDoc = await DataService.addCaseDocument(caseData.id, {
-                  name: `Invoice #${invoiceNum}`,
-                  type: 'INVOICE',
-                  size: 'HTML'
-              });
-
-               setCaseData(prev => prev ? ({
-                  ...prev,
-                  documents: [newDoc, ...(prev.documents || [])]
-              }) : null);
-
-              await handleAddNote(undefined, `💰 Invoice Generated: #${invoiceNum} for $${caseData.value.toLocaleString()}`);
-              
-              // Auto download
-              handleDownload(newDoc);
-              
-          } catch (e) {
-              alert("Failed to generate invoice.");
-          }
-      }
-  };
-
   const handleDownload = (doc: CaseDocument) => {
     if (!caseData) return;
 
     if (doc.type === 'INVOICE') {
+        // Generate a nice HTML Invoice
         const content = `
 <!DOCTYPE html>
 <html>
@@ -136,6 +59,7 @@ export default function CaseDetails() {
         .amount-label { font-size: 14px; color: #666; }
         .amount-value { font-size: 36px; font-weight: bold; color: #111; }
         .status { display: inline-block; padding: 6px 12px; background: #DCFCE7; color: #166534; border-radius: 20px; font-size: 14px; font-weight: 600; margin-top: 10px; }
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 12px; color: #999; }
     </style>
 </head>
 <body>
@@ -143,6 +67,7 @@ export default function CaseDetails() {
         <div class="logo">LegalFlow</div>
         <div>Official Receipt</div>
     </div>
+    
     <div class="meta-grid">
         <div>
             <div class="label">Billed To</div>
@@ -155,10 +80,16 @@ export default function CaseDetails() {
             <div style="font-size: 14px; color: #666; margin-top: 4px;">Date: ${new Date(doc.createdAt).toLocaleDateString()}</div>
         </div>
     </div>
+
     <div class="amount-box">
         <div class="amount-label">Total Amount Paid</div>
         <div class="amount-value">$${caseData.value.toLocaleString()}</div>
         <div class="status">PAID IN FULL</div>
+    </div>
+
+    <div class="footer">
+        Generated by LegalFlow Practice Management System<br>
+        This is a computer generated document.
     </div>
 </body>
 </html>`;
@@ -176,29 +107,28 @@ export default function CaseDetails() {
         // Open Cloudinary URL
         window.open(doc.url, '_blank');
     } else {
-        alert("Document URL not found.");
+        alert("Document URL missing.");
     }
   };
 
-  const handleSendEmail = async () => {
-      if (!caseData) return;
-      window.location.href = `mailto:?subject=Update regarding Case: ${caseData.caseNumber}&body=Dear ${caseData.clientName},%0D%0A%0D%0AHere is an update regarding your case.`;
-      await handleAddNote(undefined, `📧 Email draft opened for client: ${caseData.clientName}`);
-  };
-
-  const handleCloseCase = async () => {
-      if (!caseData) return;
-      if (window.confirm("Are you sure you want to close this case? This will update the status to 'Closed'.")) {
-          try {
-              const updated = await DataService.updateCase(caseData.id, { status: 'Closed' });
-              setCaseData({ ...caseData, status: updated.status });
-              await handleAddNote(undefined, `🛑 Case marked as CLOSED by user.`);
-              alert("Case closed successfully.");
-          } catch (e) {
-              alert("Failed to close case.");
-          }
+  const handleDelete = async (docId: string) => {
+      if(!confirm("Are you sure you want to delete this document?")) return;
+      try {
+          await DataService.deleteCaseDocument(docId);
+          fetchCaseDetails(); 
+      } catch (e) {
+          alert("Failed to delete document");
       }
   };
+
+  const filteredDocs = caseData?.documents?.filter(doc => {
+      const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesFilter = filterType === 'ALL' || doc.type === filterType;
+      return matchesSearch && matchesFilter;
+  }) || [];
+
+  const invoiceCount = caseData?.documents?.filter(d => d.type === 'INVOICE').length || 0;
+  const uploadCount = caseData?.documents?.filter(d => d.type === 'UPLOAD').length || 0;
 
   if (loading) {
       return (
@@ -213,7 +143,7 @@ export default function CaseDetails() {
   if (!caseData) {
       return (
           <AppLayout>
-              <div className="p-8"><div className="text-center">Case not found</div></div>
+              <div className="p-8 text-center">Case not found</div>
           </AppLayout>
       );
   }
@@ -221,207 +151,132 @@ export default function CaseDetails() {
   return (
     <AppLayout>
       <div className="p-8 max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center space-x-4 mb-6">
-            <Link href="/cases" className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600">
+        {/* Header */}
+        <div className="flex items-center space-x-4 mb-2">
+            <Link href={`/cases/${caseData.id}`} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600">
                 <ArrowLeft className="w-6 h-6" />
             </Link>
             <div>
-                <h1 className="text-2xl font-bold text-slate-900">{caseData.title}</h1>
-                <p className="text-slate-500">{caseData.caseNumber}</p>
-            </div>
-            <div className={`ml-auto px-3 py-1 rounded-full text-sm font-semibold ${
-                caseData.status === 'Open' ? 'bg-blue-100 text-blue-800' :
-                caseData.status === 'Closed' ? 'bg-slate-100 text-slate-800' :
-                'bg-orange-100 text-orange-800'
-            }`}>
-                {caseData.status}
+                <h1 className="text-2xl font-bold text-slate-900">Document Repository</h1>
+                <p className="text-slate-500">Managing files for {caseData.caseNumber}</p>
             </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 space-y-6">
-                <Card title="Case Information">
-                    <div className="grid grid-cols-2 gap-6">
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">Client</p>
-                            <p className="text-slate-900 font-medium">{caseData.clientName}</p>
-                        </div>
-                         <div>
-                            <p className="text-sm font-medium text-slate-500">Type</p>
-                            <p className="text-slate-900">{caseData.type}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">Priority</p>
-                            <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium border ${
-                                caseData.priority === 'High' ? 'bg-red-50 text-red-600 border-red-100' : 
-                                caseData.priority === 'Medium' ? 'bg-orange-50 text-orange-600 border-orange-100' : 
-                                'bg-green-50 text-green-600 border-green-100'
-                            }`}>
-                                {caseData.priority}
-                            </span>
-                        </div>
-                        <div>
-                            <p className="text-sm font-medium text-slate-500">Estimated Value</p>
-                            <p className="text-slate-900 font-medium">${(caseData.value || 0).toLocaleString()}</p>
-                        </div>
-                        <div>
-                             <p className="text-sm font-medium text-slate-500 flex items-center gap-1">
-                                 <Calendar className="w-3 h-3" /> Start Date
-                             </p>
-                             <p className="text-slate-900">{new Date(caseData.startDate).toLocaleDateString()}</p>
-                        </div>
-                         <div>
-                             <p className="text-sm font-medium text-slate-500 flex items-center gap-1">
-                                 <Clock className="w-3 h-3" /> Next Hearing
-                             </p>
-                             <p className="text-slate-900 font-medium">
-                                 {caseData.nextHearing ? new Date(caseData.nextHearing).toLocaleDateString() : 'Not scheduled'}
-                             </p>
-                        </div>
-                    </div>
-                </Card>
+        {/* Info Banner */}
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+                <p className="font-semibold">Secure Cloud Storage</p>
+                <p>Files uploaded here are stored securely in the cloud. Click the view button to access the actual file content.</p>
+            </div>
+        </div>
 
-                <Card>
-                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
-                        <h3 className="text-lg font-semibold text-slate-900">Recent Documents</h3>
-                        <Link href={`/cases/${caseData.id}/documents`} className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-                            View All <ExternalLink className="w-3 h-3" />
-                        </Link>
-                    </div>
-                    <div className="space-y-3">
-                        {caseData.documents && caseData.documents.length > 0 ? (
-                            caseData.documents.slice(0, 3).map((doc) => (
-                                <div key={doc.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors">
-                                    <div className="flex items-center space-x-3 overflow-hidden">
-                                        <div className={`flex-shrink-0 p-2 rounded-lg ${doc.type === 'INVOICE' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                                            {doc.type === 'INVOICE' ? <FileText className="w-5 h-5" /> : <File className="w-5 h-5" />}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-slate-900 truncate">{doc.name}</p>
-                                            <p className="text-xs text-slate-500 truncate">{doc.size} • {new Date(doc.createdAt).toLocaleDateString()}</p>
-                                        </div>
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">Total Files</p>
+                    <p className="text-2xl font-bold text-slate-900">{caseData.documents?.length || 0}</p>
+                </div>
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                    <File className="w-6 h-6" />
+                </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">Invoices Generated</p>
+                    <p className="text-2xl font-bold text-slate-900">{invoiceCount}</p>
+                </div>
+                <div className="p-3 bg-green-50 text-green-600 rounded-lg">
+                    <FileText className="w-6 h-6" />
+                </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">User Uploads</p>
+                    <p className="text-2xl font-bold text-slate-900">{uploadCount}</p>
+                </div>
+                <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+                    <UploadCloud className="w-6 h-6" />
+                </div>
+            </div>
+        </div>
+
+        {/* Main Content */}
+        <Card className="min-h-[500px]">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between gap-4">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                    <input 
+                        type="text" 
+                        placeholder="Search by file name..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Filter className="w-4 h-4 text-slate-500" />
+                    <select 
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value as any)}
+                        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                        <option value="ALL">All Documents</option>
+                        <option value="INVOICE">Invoices Only</option>
+                        <option value="UPLOAD">Uploads Only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="p-0">
+                {filteredDocs.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                        {filteredDocs.map((doc) => (
+                            <div key={doc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                                <div className="flex items-center space-x-4">
+                                    <div className={`p-3 rounded-lg ${doc.type === 'INVOICE' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                                        {doc.type === 'INVOICE' ? <FileText className="w-6 h-6" /> : <File className="w-6 h-6" />}
                                     </div>
+                                    <div>
+                                        <h4 className="font-medium text-slate-900">{doc.name}</h4>
+                                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                                            <span>{doc.size}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {doc.createdBy}</span>
+                                            <span>•</span>
+                                            <span>{new Date(doc.createdAt).toLocaleString()}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
                                     <button 
                                         onClick={() => handleDownload(doc)}
-                                        className="p-2 text-slate-400 hover:text-blue-600 transition-colors flex-shrink-0"
-                                        title={doc.type === 'INVOICE' ? 'Download Invoice' : 'View Document'}
+                                        className="flex items-center space-x-1 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                     >
                                         {doc.type === 'INVOICE' ? <Download className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
+                                        <span className="hidden sm:inline">{doc.type === 'INVOICE' ? 'Download' : 'View File'}</span>
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDelete(doc.id)}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Delete"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-6 text-slate-500 border-2 border-dashed border-slate-100 rounded-lg">
-                                <p>No documents uploaded yet.</p>
                             </div>
-                        )}
+                        ))}
                     </div>
-                </Card>
-
-                <Card title="Follow-up Notes & Timeline">
-                    <form onSubmit={e => handleAddNote(e)} className="mb-6 relative">
-                        <textarea 
-                            className="w-full border border-slate-300 rounded-lg p-3 pr-12 focus:ring-2 focus:ring-blue-500 focus:outline-none min-h-[100px] resize-none"
-                            placeholder="Record a follow-up, meeting note, or update..."
-                            value={noteContent}
-                            onChange={(e) => setNoteContent(e.target.value)}
-                        />
-                        <button 
-                            type="submit"
-                            disabled={submittingNote || !noteContent.trim()}
-                            className="absolute bottom-3 right-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-slate-300 transition-colors"
-                        >
-                            <Send className="w-4 h-4" />
-                        </button>
-                    </form>
-
-                    <div className="space-y-6">
-                        {caseData.notes && caseData.notes.length > 0 ? (
-                            caseData.notes.map((note) => (
-                                <div key={note.id} className="flex gap-4">
-                                    <div className="flex-shrink-0 mt-1">
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                            <MessageSquare className="w-4 h-4 text-slate-500" />
-                                        </div>
-                                    </div>
-                                    <div className="flex-grow">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-semibold text-slate-900">{note.createdBy}</span>
-                                            <span className="text-xs text-slate-500">{new Date(note.createdAt).toLocaleString()}</span>
-                                        </div>
-                                        <div className="mt-1 text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 whitespace-pre-wrap">
-                                            {note.content}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-center text-slate-500 py-4">No notes recorded yet.</div>
-                        )}
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                        <File className="w-16 h-16 text-slate-200 mb-4" />
+                        <p className="text-lg font-medium">No documents found</p>
+                        <p className="text-sm">Upload files from the case details page to see them here.</p>
                     </div>
-                </Card>
+                )}
             </div>
-
-            <div className="space-y-6">
-                <div className="bg-blue-600 rounded-xl p-6 text-white shadow-lg">
-                    <h3 className="font-bold text-lg mb-2">Next Steps</h3>
-                    <p className="text-blue-100 text-sm mb-4">Ensure all documents are collected before the hearing date.</p>
-                    
-                    <input 
-                        type="file" 
-                        ref={fileInputRef}
-                        onChange={handleFileUpload}
-                        className="hidden"
-                    />
-                    
-                    <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={fileUploading}
-                        className="w-full bg-white text-blue-600 py-2 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
-                    >
-                        {fileUploading ? (
-                            <span>Uploading...</span>
-                        ) : (
-                            <>
-                                <Upload className="w-4 h-4" /> Upload Document
-                            </>
-                        )}
-                    </button>
-                </div>
-
-                <Card title="Quick Actions">
-                    <div className="space-y-2">
-                        <button 
-                            onClick={handleGenerateInvoice}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 rounded-lg text-slate-700 text-sm transition-colors flex items-center gap-3 border border-transparent hover:border-slate-100"
-                        >
-                            <FileText className="w-4 h-4 text-slate-400" />
-                            Generate Invoice
-                        </button>
-                        <button 
-                            onClick={handleSendEmail}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 rounded-lg text-slate-700 text-sm transition-colors flex items-center gap-3 border border-transparent hover:border-slate-100"
-                        >
-                            <Mail className="w-4 h-4 text-slate-400" />
-                            Send Email to Client
-                        </button>
-                        {caseData.status !== 'Closed' ? (
-                             <button 
-                                onClick={handleCloseCase}
-                                className="w-full text-left px-4 py-3 hover:bg-red-50 rounded-lg text-red-600 text-sm transition-colors flex items-center gap-3 border border-transparent hover:border-red-100"
-                            >
-                                <CheckCircle className="w-4 h-4" />
-                                Close Case
-                            </button>
-                        ) : (
-                            <div className="w-full text-center px-4 py-3 bg-slate-100 rounded-lg text-slate-500 text-sm">
-                                Case is Closed
-                            </div>
-                        )}
-                    </div>
-                </Card>
-            </div>
-        </div>
+        </Card>
       </div>
     </AppLayout>
   );
